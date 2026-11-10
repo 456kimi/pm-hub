@@ -9,6 +9,9 @@
   - 只导出 kind=program 的项目及其直接子项目
   - 剔除 dev_logs（本人私有日志）与 paths（本机绝对路径）
   - 所有文本里的盘符绝对路径统一脱敏为 `…`
+  - **decisions 只导出 status=active**；已推翻（revoked）的结论一律不出现，
+    否则协作者会按已经作废的口径干活（2026-11-10 修正）
+  - 密钥 / 令牌 / 手机号等敏感串再次脱敏
   - 不导出独立小项目（含公司/客户类项目）
 
 用法：python export_status.py [-o PROJECT-STATUS.md]
@@ -22,11 +25,31 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+from pm_progress import progress_info, program_rollup
+
 ROOT = Path(__file__).resolve().parent
 REGISTRY = ROOT / "registry.json"
 
 # 盘符绝对路径：C:\a\b\c  →  …
 WIN_PATH = re.compile(r"[A-Za-z]:\\[^\s，。；、）)\]】\"']*")
+
+# 敏感串：公开导出前必须再抹一遍（不只是路径）
+# 顺序有意义：先匹配带前缀的密钥，再匹配「名字=值」形式，最后兜长十六进制串。
+SECRET_PATTERNS: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"\bsk-[A-Za-z0-9_\-]{12,}"), "[密钥已脱敏]"),
+    (re.compile(r"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}"), "[密钥已脱敏]"),
+    (re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}"), "[密钥已脱敏]"),
+    (re.compile(r"\bxox[baprs]-[A-Za-z0-9\-]{10,}"), "[密钥已脱敏]"),
+    (re.compile(r"\bAKIA[0-9A-Z]{16}\b"), "[密钥已脱敏]"),
+    # TOKEN = "xxxx" / TUSHARE_TOKEN = "xxxx" / api_key: xxxx —— 只换值，保留字段名便于阅读
+    (re.compile(r"(?i)((?<![A-Za-z0-9])[A-Za-z0-9_]*(?:token|api[_-]?key|access[_-]?key"
+                r"|secret[_-]?key|password|passwd))"
+                r"(\s*[:=]\s*)([\"']?)([A-Za-z0-9_\-\.]{12,})\3"),
+     r"\1\2\3[已脱敏]\3"),
+    # 裸的长十六进制串（Tushare / 各类 token 常见形态）
+    (re.compile(r"\b[a-f0-9]{40,}\b"), "[长十六进制串已脱敏]"),
+    (re.compile(r"\b1[3-9]\d{9}\b"), "[手机号已脱敏]"),
+]
 
 STATUS_LABEL = {
     "active": "进行中",
@@ -78,16 +101,35 @@ TASK_LABEL = {
 
 
 def scrub(text) -> str:
-    """抹掉盘符绝对路径，只留可读描述。支持 str / list / dict / None。"""
+    """抹掉盘符绝对路径与密钥/令牌/手机号，只留可读描述。
+
+    支持 str / list / dict / None。公开导出的所有文本都必须过这里。
+    """
     if text is None:
         return ""
     if isinstance(text, str):
-        return WIN_PATH.sub("…", text).strip()
+        out = WIN_PATH.sub("…", text)
+        for pat, repl in SECRET_PATTERNS:
+            out = pat.sub(repl, out)
+        return out.strip()
     if isinstance(text, (list, tuple, set)):
         return "、".join(scrub(x) for x in text if x is not None and scrub(x) != "")
     if isinstance(text, dict):
         return "；".join(f"{k}={scrub(v)}" for k, v in text.items())
-    return WIN_PATH.sub("…", str(text)).strip()
+    out = WIN_PATH.sub("…", str(text))
+    for pat, repl in SECRET_PATTERNS:
+        out = pat.sub(repl, out)
+    return out.strip()
+
+
+def active_decisions(obj: dict | None) -> list[dict]:
+    """现行决策（status=active）。与 pm_handoff.active_decisions 同一口径。
+
+    缺 status 的历史条目按 active 处理（老数据没有这个字段，即视为生效）；
+    status=revoked 的条目**永远不进公开导出**。
+    """
+    items = (obj or {}).get("decisions") or []
+    return [d for d in items if isinstance(d, dict) and d.get("status", "active") == "active"]
 
 
 def label(mapping: dict, key: str) -> str:
@@ -98,13 +140,15 @@ def label(mapping: dict, key: str) -> str:
 
 def render_program(prog: dict, children: list[dict]) -> list[str]:
     out: list[str] = []
+    roll = program_rollup(children or [], prog)
     out.append(f"## {prog['name']}")
     out.append("")
     out.append(
         f"- **状态**：{label(STATUS_LABEL, prog.get('status'))}"
         f" ｜ **阶段**：{scrub(prog.get('stage') or '—')}"
         f" ｜ **健康度**：{label(HEALTH_LABEL, prog.get('health'))}"
-        f" ｜ **进度**：{prog.get('progress') if prog.get('progress') is not None else '—'}%"
+        f" ｜ **进度**：{roll['progress'] if roll['progress'] is not None else '—'}%"
+        f"（{roll['progress_source']}）"
     )
     if prog.get("last_activity"):
         out.append(f"- **最近活动**：{prog['last_activity']}")
@@ -139,9 +183,9 @@ def render_program(prog: dict, children: list[dict]) -> list[str]:
             )
         out.append("")
 
-    decisions = prog.get("decisions") or []
+    decisions = active_decisions(prog)
     if decisions:
-        out.append("### 已定决策")
+        out.append("### 现行决策（active）")
         out.append("")
         for dec in decisions:
             date = dec.get("date", "")
@@ -185,11 +229,12 @@ def render_program(prog: dict, children: list[dict]) -> list[str]:
 
 def render_sub(proj: dict) -> list[str]:
     out: list[str] = []
+    pct, pct_src = progress_info(proj)
     out.append(f"#### {proj['name']}（`{proj['id']}`）")
     out.append("")
     out.append(
         f"- **状态**：{label(STATUS_LABEL, proj.get('status'))}"
-        f" ｜ **进度**：{proj.get('progress') if proj.get('progress') is not None else '—'}%"
+        f" ｜ **进度**：{pct if pct is not None else '—'}%（{pct_src}）"
         f" ｜ **最近活动**：{proj.get('last_activity') or '—'}"
     )
     out.append("")
@@ -232,9 +277,9 @@ def render_sub(proj: dict) -> list[str]:
         ))
         out.append("")
 
-    decisions = proj.get("decisions") or []
+    decisions = active_decisions(proj)
     if decisions:
-        out.append("**已定决策**")
+        out.append("**现行决策（active）**")
         out.append("")
         for dec in decisions:
             text = scrub(dec.get("text", ""))
@@ -304,9 +349,10 @@ def main() -> int:
     lines.append("|----------|------|------|----------|------|")
     for g in progs:
         kids = [p for p in projects if p.get("parent") == g["id"]]
+        roll = program_rollup(projects, g)
         lines.append(
             f"| **{g['name']}** | {label(STATUS_LABEL, g.get('status'))} "
-            f"| {g.get('progress') if g.get('progress') is not None else '—'}% "
+            f"| {roll['progress'] if roll['progress'] is not None else '—'}% "
             f"| {len(kids)} | {scrub(g.get('stage') or '—')} |"
         )
     lines.append("")
