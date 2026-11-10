@@ -35,6 +35,38 @@ STATUS_LABEL = {
     "done": "已完成",
     "paused": "搁置",
 }
+
+# 超大项目 → 对应的公开代码仓库（人工维护）
+REPO_INDEX: dict[str, list[tuple[str, str, str]]] = {
+    "prog-quant-live": [
+        (
+            "paper_sim",
+            "https://github.com/456kimi/paper_sim",
+            "四通道并行模拟盘的完整引擎、每日运行链路与逐日日报",
+        ),
+    ],
+    "prog-strategy-lines": [
+        (
+            "strategy-lab",
+            "https://github.com/456kimi/strategy-lab",
+            "单策略基线、相关性、稳健性、OOS 验证与组合权重",
+        ),
+    ],
+    "prog-fundamental-flow": [
+        (
+            "fundamental-model",
+            "https://github.com/456kimi/fundamental-model",
+            "基本面 ML 估值错配因子复现：37 变量面板 → ML 估值 → 多空/多头超额回测",
+        ),
+    ],
+    "prog-quant-research": [
+        (
+            "pm-hub",
+            "https://github.com/456kimi/pm-hub",
+            "项目管理中枢本体；本线研究代码尚未单独建仓",
+        ),
+    ],
+}
 HEALTH_LABEL = {"ok": "正常", "warn": "预警", "bad": "异常", "risk": "风险"}
 TASK_LABEL = {
     "todo": "待办",
@@ -277,6 +309,20 @@ def main() -> int:
             f"| {g.get('progress') if g.get('progress') is not None else '—'}% "
             f"| {len(kids)} | {scrub(g.get('stage') or '—')} |"
         )
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+    lines.append("## 代码仓库")
+    lines.append("")
+    lines.append("| 超大项目 | 仓库 | 内容 |")
+    lines.append("|----------|------|------|")
+    for g in progs:
+        for name, url, desc in REPO_INDEX.get(g["id"], []):
+            lines.append(f"| {g['name']} | [{name}]({url}) | {desc} |")
+    lines.append("")
+    lines.append(
+        "> 仓库只含代码与文档；行情数据、台账、本地凭证均不入库。"
+    )
     lines.append("")
     lines.append("---")
     lines.append("")
