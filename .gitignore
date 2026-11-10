@@ -1,0 +1,52 @@
+# ============ 私密数据：台账与本机运行时状态，绝不入库 ============
+registry*
+unresolved.json
+web_cache.json
+ui_prefs.json
+
+# ============ 台账导出的静态页面（含全部项目数据）============
+index.html
+preview/
+_*.html
+
+# ============ 工作日志：含公司/客户项目细节，不入公开仓库 ============
+# 需要留档请导出脱敏版另行存放
+WORKLOG.md
+reports/
+
+# ============ 所有 *.bak_* / *.backup* 备份残留 ============
+*.bak_*
+*.backup*
+*_bak_*
+
+# ============ 一次性数据填充 / 迁移脚本（正文写死了具体项目台账内容）============
+sync_entry_*.py
+sync_location_*.py
+update_entry_*.py
+_reg_*.py
+_shot_*.py
+_test_*.py
+_smoke_*.py
+dashboard.bak_*.py
+
+# ============ 报告、日志、截图 ============
+reports/
+devlogs/
+*.log
+*.png
+*.jpg
+*.jpeg
+*.docx
+
+# ============ 缓存与本地状态 ============
+__pycache__/
+*.pyc
+*.pyo
+.mimosa/
+assets/
+tests/phase2_apptest_*/
+
+# ============ 环境与密钥 ============
+.streamlit/secrets.toml
+.env
+.env.*

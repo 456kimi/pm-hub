@@ -1,0 +1,7 @@
+[theme]
+base = "light"
+primaryColor = "#33536F"
+backgroundColor = "#F6F5F2"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#22201D"
+font = "'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif"
