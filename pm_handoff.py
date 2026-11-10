@@ -313,6 +313,8 @@ def build_manifest(manifest_id: str, prog, proj, task, operator: str, pack_dir: 
             roots.append(parent)
     forbidden = [
         "修改或覆盖 registry.json（正式台账只能走 pm_registry.py）",
+        "写入或删除 dev_logs（老板专属，AI 只读）",
+        "改写本任务包内的 TASK.md / MANIFEST.json（只读快照）",
         "把建议写成正式 decision，或改动项目长期目标",
         "推送 GitHub / 合并 PR / 发布部署",
         "删除、移动、重命名授权范围之外的文件",
@@ -387,7 +389,14 @@ def export_pack(proj: dict, task: dict, prog: dict | None = None,
     """生成一个交接包目录，返回 {handoff_id, pack_dir, files, manifest}。
 
     纯文件操作，不联网、不调用模型、不碰台账。
+
+    前置条件：任务必须有可判定的验收标准。没有验收标准的任务不允许交付，
+    否则执行方只能"自证完成"，P1 的验收环节直接失效（见 AGENTS.md 交接协议）。
     """
+    if not (task.get("acceptance") or "").strip():
+        raise ValueError(
+            "任务 %s 缺少验收标准，不能生成交接包：请先补齐可判定的验收条件"
+            % (task.get("id") or "?"))
     root = handoff_root(out_root)
     root.mkdir(parents=True, exist_ok=True)
     hid = _next_handoff_id(proj.get("id", "x"), task.get("id", "x"), root)

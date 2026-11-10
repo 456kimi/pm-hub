@@ -719,7 +719,7 @@ def card_program_html(prog, agg):
               f'padding:3px 0;color:var(--pm-ink-2);">'
               f'<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'
               f'<span style="display:inline-block;width:5px;height:5px;border-radius:50%;'
-              f'background:{kc};margin-right:7px;vertical-align:middle;"></span>{k.get("name", "")}</span>'
+              f'background:{kc};margin-right:7px;vertical-align:middle;"></span>{html.escape(str(k.get("name", "")))}</span>'
               f'<span style="color:var(--pm-ink-3);white-space:nowrap;flex:0 0 auto;">'
               f'{ts["done"]}/{ts["total"]} 任务</span></div>')
         rows.append(rr)
@@ -733,17 +733,17 @@ def card_program_html(prog, agg):
         f'<div class="pmcard" style="padding:20px 22px 18px;height:100%;">'
         f'<div class="gloss"></div>'
         f'<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">'
-        f'<span style="font-weight:700;font-size:16.5px;color:var(--pm-ink);letter-spacing:-.01em;line-height:1.35;">{prog.get("name", "")}</span>'
+        f'<span style="font-weight:700;font-size:16.5px;color:var(--pm-ink);letter-spacing:-.01em;line-height:1.35;">{html.escape(str(prog.get("name", "")))}</span>'
         f'{badge(color, STATUS_CN.get(prog.get("status"), ""))}</div>'
-        f'<div style="color:var(--pm-ink-2);font-size:12.5px;line-height:1.65;margin:8px 0 6px;">{prog.get("description", "")}</div>'
+        f'<div style="color:var(--pm-ink-2);font-size:12.5px;line-height:1.65;margin:8px 0 6px;">{html.escape(str(prog.get("description", "")))}</div>'
         f'<div style="font-size:12px;color:var(--pm-ink-2);margin-bottom:5px;">{task_line}</div>'
-        f'<div style="margin:5px 0 10px;">{progress_html(agg["progress"])}<br><span style="font-size:11px;color:var(--pm-ink-3);">{agg["progress_source"]}</span></div>'
+        f'<div style="margin:5px 0 10px;">{progress_html(agg["progress"])}<br><span style="font-size:11px;color:var(--pm-ink-3);">{html.escape(str(agg["progress_source"]))}</span></div>'
         f'<div style="border-top:1px solid var(--pm-line-soft);padding-top:8px;">'
         f'<div style="font-size:11px;color:var(--pm-ink-3);letter-spacing:.4px;margin-bottom:3px;">小项目</div>'
         + "".join(rows) +
         f'</div>'
         f'<div style="font-size:11.5px;color:var(--pm-ink-3);margin-top:10px;padding-top:9px;'
-        f'border-top:1px solid var(--pm-line-soft);">阶段 {prog.get("stage", "—")} · 更新 {prog.get("last_activity") or "—"}</div>'
+        f'border-top:1px solid var(--pm-line-soft);">阶段 {html.escape(str(prog.get("stage", "—")))} · 更新 {html.escape(str(prog.get("last_activity") or "—"))}</div>'
         f'</div>')
 
 
@@ -763,14 +763,14 @@ def card_project_html(p):
     return (
         f'<div class="pmcard" style="padding:18px 20px 16px;height:100%;">'
         f'<div class="gloss"></div>'
-        f'<div style="font-weight:600;font-size:14.5px;color:var(--pm-ink);">{p.get("name", "")}'
+        f'<div style="font-weight:600;font-size:14.5px;color:var(--pm-ink);">{html.escape(str(p.get("name", "")))}'
         f'{badge(color, STATUS_CN.get(p.get("status"), ""))}</div>'
-        f'<div style="color:var(--pm-ink-2);font-size:12.5px;line-height:1.6;margin:7px 0;min-height:38px;">{p.get("description", "")}</div>'
-        f'<div style="font-size:12px;color:var(--pm-ink-2);margin-bottom:4px;">阶段 {p.get("stage", "—")}　·　{gsum}</div>'
-        f'<div style="margin:6px 0 2px;">{progress_html(progress_info(p)[0])} <span style="font-size:11px;color:var(--pm-ink-3);">{progress_info(p)[1]}</span></div>'
+        f'<div style="color:var(--pm-ink-2);font-size:12.5px;line-height:1.6;margin:7px 0;min-height:38px;">{html.escape(str(p.get("description", "")))}</div>'
+        f'<div style="font-size:12px;color:var(--pm-ink-2);margin-bottom:4px;">阶段 {html.escape(str(p.get("stage", "—")))}　·　{gsum}</div>'
+        f'<div style="margin:6px 0 2px;">{progress_html(progress_info(p)[0])} <span style="font-size:11px;color:var(--pm-ink-3);">{html.escape(str(progress_info(p)[1]))}</span></div>'
         f'<div style="font-size:11.5px;color:var(--pm-ink-3);margin-top:11px;padding-top:10px;border-top:1px solid var(--pm-line-soft);">'
-        f'更新 {p.get("last_activity") or "—"} · {plats}<br>'
-        f'<code>{root or "路径待补"}</code></div></div>')
+        f'更新 {html.escape(str(p.get("last_activity") or "—"))} · {html.escape(plats)}<br>'
+        f'<code>{html.escape(str(root)) or "路径待补"}</code></div></div>')
 
 
 def open_workbench_task(project, task_id):
@@ -1122,7 +1122,7 @@ def ui_ai_logs_block(p):
         st.rerun()
 
 
-DEVLOGS_DIR = r"H:\github\pm-hub\devlogs"
+DEVLOGS_DIR = str(HUB / "devlogs")
 
 
 def _devlog_write_file(pid, text):
@@ -1856,17 +1856,21 @@ def render_task_block(prog, p):
             nt_out = b2.text_input("交付物", placeholder="例：修复后的 collector.py + 运行日志")
             nt_ok = st.form_submit_button("添加任务", type="primary")
         if nt_ok and nt_title.strip():
-            norm_tasks(p).append({"id": next_tid(norm_tasks(p)), "title": nt_title.strip(),
-                          "detail": nt_detail.strip(), "acceptance": nt_acc.strip(),
-                          "inputs": nt_in.strip(), "outputs": nt_out.strip(),
-                          "batch": nt_batch.strip(), "prompt": "", "status": "todo",
-                          "updated": datetime.now().strftime("%Y-%m-%d")})
-            recompute_progress(p)
-            touch(p)
-            save_reg(reg, "owner(工作台)")
-            reset_form_after_save(f"addtask-{p['id']}")
-            st.toast("已添加任务")
-            st.rerun()
+            # 验收标准是任务可判定的前提：缺失则拒绝入库（AGENTS.md / 交接协议硬规则）。
+            if not nt_acc.strip():
+                st.warning("验收标准必填：没有可判定的验收条件，任务无法验收，也不会被允许生成交接包。")
+            else:
+                norm_tasks(p).append({"id": next_tid(norm_tasks(p)), "title": nt_title.strip(),
+                              "detail": nt_detail.strip(), "acceptance": nt_acc.strip(),
+                              "inputs": nt_in.strip(), "outputs": nt_out.strip(),
+                              "batch": nt_batch.strip(), "prompt": "", "status": "todo",
+                              "updated": datetime.now().strftime("%Y-%m-%d")})
+                recompute_progress(p)
+                touch(p)
+                save_reg(reg, "owner(工作台)")
+                reset_form_after_save(f"addtask-{p['id']}")
+                st.toast("已添加任务")
+                st.rerun()
 
         with st.form(fresh_form_key(f"bulktask-{p['id']}"), clear_on_submit=False, border=False):
             raw = st.text_area("批量粘贴（每行一条：标题 | 说明 | 验收标准 | 批次）", height=100,
@@ -1874,25 +1878,35 @@ def render_task_block(prog, p):
             bulk_ok = st.form_submit_button("批量添加")
         if bulk_ok and raw.strip():
             n_add = 0
+            n_skip = 0
             for line in raw.splitlines():
                 line = line.strip()
                 if not line:
                     continue
                 parts = [x.strip() for x in line.split("|")]
+                acc = parts[2] if len(parts) > 2 else ""
+                if not (parts[0] and acc):
+                    n_skip += 1      # 缺标题或缺验收标准：不入库，避免制造无法验收的任务
+                    continue
                 norm_tasks(p).append({"id": next_tid(norm_tasks(p)), "title": parts[0],
                               "detail": parts[1] if len(parts) > 1 else "",
-                              "acceptance": parts[2] if len(parts) > 2 else "",
+                              "acceptance": acc,
                               "inputs": "", "outputs": "",
                               "batch": parts[3] if len(parts) > 3 else "",
                               "prompt": "", "status": "todo",
                               "updated": datetime.now().strftime("%Y-%m-%d")})
                 n_add += 1
-            recompute_progress(p)
-            touch(p)
-            save_reg(reg, "owner(工作台)")
-            reset_form_after_save(f"bulktask-{p['id']}")
-            st.toast("已批量添加 %d 条" % n_add)
-            st.rerun()
+            if n_add:
+                recompute_progress(p)
+                touch(p)
+                save_reg(reg, "owner(工作台)")
+                reset_form_after_save(f"bulktask-{p['id']}")
+            if n_skip:
+                st.warning("已添加 %d 条，跳过 %d 条（缺标题或缺验收标准）。" % (n_add, n_skip))
+            else:
+                st.toast("已批量添加 %d 条" % n_add)
+            if n_add:
+                st.rerun()
 
     # ---- 任务包导出 ----
     if tasks:

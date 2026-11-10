@@ -467,6 +467,21 @@ def classify(name: str, source: str = ""):
     return None, None
 
 
+def apply_web_cache(app, wc):
+    """把网页缓存里的描述写进应用记录（就地修改并返回）。
+
+    来源是网络检索结果，属于「AI 代拟」，必须保持 desc_confirmed=False 等老板确认。
+    2026-11-10 修：此处原先把 desc_confirmed 置 True，等于把 AI 写的用途冒充成
+    用户已确认的结论（web_cache.json 里就有"具体产品待确认"这类内容）。
+    """
+    app["purpose"] = wc["purpose"]
+    app["category"] = wc.get("category", "other")
+    app["auto_source"] = "web"
+    app["auto_at"] = datetime.now().strftime("%Y-%m-%d")
+    app["desc_confirmed"] = False
+    return app
+
+
 def main():
     reg = read_registry(REG)
 
@@ -508,11 +523,7 @@ def main():
         # 命中 web_cache
         wc = web.get(name)
         if wc and wc.get("purpose"):
-            a["purpose"] = wc["purpose"]
-            a["category"] = wc.get("category", "other")
-            a["auto_source"] = "web"
-            a["auto_at"] = datetime.now().strftime("%Y-%m-%d")
-            a["desc_confirmed"] = True
+            apply_web_cache(a, wc)
             proposals[app_key(a)] = dict(a)
             continue
 

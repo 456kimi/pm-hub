@@ -254,6 +254,25 @@ def dedupe_apps(reg):
     reg["apps"] = out
 
 
+def assign_unique_ids(existing_apps, new_apps):
+    """给新应用分配唯一 id（就地修改并返回 new_apps）。
+
+    id 由 `norm(name)[:40]` 生成，不同名字截断到 40 字符后会撞车；因此必须按
+    **id** 判重，不能按 name。历史实现比对的是 name 集合，导致两个不同应用拿到
+    同一个 id（2026-11-10 实测台账有 1 例 microsoft.net.workload.mono.toolchain.ne）。
+    """
+    have = {a.get("id") for a in existing_apps if a.get("id")}
+    for a in new_apps:
+        base = a.get("id") or norm(a.get("name", "")) or "app"
+        nid, n = base, 2
+        while nid in have:
+            nid = "%s-%d" % (base, n)
+            n += 1
+        a["id"] = nid
+        have.add(nid)
+    return new_apps
+
+
 def merge_apps(reg):
     dedupe_apps(reg)
     discovered = {}
@@ -290,12 +309,8 @@ def merge_apps(reg):
                 "source": disc.get("source", "scan"),
                 "desc_confirmed": False, "related_projects": [],
             })
-    # id 去重
-    have = {norm(a["name"]) for a in reg["apps"]}
-    for a in new_apps:
-        if norm(a["name"]) in have:
-            a["id"] = a["id"] + "-2"
-        have.add(norm(a["name"]))
+    # id 去重：按 id 判重（详见 assign_unique_ids 的说明）
+    assign_unique_ids(reg["apps"], new_apps)
     reg["apps"].extend(new_apps)
     return new_apps, filled
 

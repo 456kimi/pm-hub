@@ -50,7 +50,8 @@ class DashboardConcurrencyTests(unittest.TestCase):
             "projects": [{
                 "id": "demo", "name": "Example", "kind": "project", "status": "active",
                 "parent": None, "paths": {"root": ""},
-                "tasks": [{"id": "t1", "title": "Original", "status": "todo"}],
+                "tasks": [{"id": "t1", "title": "Original", "status": "todo",
+                           "acceptance": "页面可打开且无异常"}],
                 "decisions": [{"id": "d1", "text": "Original decision", "status": "active"}],
             }],
             "apps": [], "locations": [],
@@ -82,6 +83,8 @@ class DashboardConcurrencyTests(unittest.TestCase):
 
     def test_old_format_add_saves_and_clears_form(self):
         self.text("任务标题").set_value("New task")
+        # 验收标准为必填项（P0-03：无验收标准的任务不可交付）
+        self.text("验收标准（必须可判定）").set_value("连续 3 个交易日自动更新，日志无报错")
         self.click("添加任务")
         self.assertFalse(self.app.exception)
         self.assertFalse(self.app.error)
