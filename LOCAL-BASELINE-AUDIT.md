@@ -11,7 +11,7 @@
 
 | 维度 | 结论 |
 |---|---|
-| 本地版本 | 可运行，入口与数据齐备；当前 HEAD `49a9600`，审计前有 6 处未提交改动 |
+| 本地版本 | 可运行，入口与数据齐备；当前 HEAD `10d279b`，工作区干净 |
 | 测试基线 | 审计前 **68 tests / OK / 4.3s**；本次修复后 **77 tests / OK / 5.6s** |
 | P0-03 八项 | **5 项本地确认真实存在并已修复**、2 项上一轮已修、1 项部分成立已消解 |
 | 私有数据入库 | 已跟踪 28 个文件，**无 registry / 日志 / 任务包 / 截图 / 报告被跟踪** |
@@ -22,11 +22,28 @@
 
 ## 二、本地实际运行版本
 
+### 2.0 P0-01 十项检查回执（逐条实测）
+
+| # | 任务书检查项 | 实测结果 |
+|---|---|---|
+| 1 | 确认项目根目录 | `H:\github\pm-hub`（`pwd` 实测）；`HUB` 由 `__file__` 推导 |
+| 2 | 检查本地实际文件和目录 | 顶层 158 项；核心 8 个 py 模块 + `tests/`(8 个测试文件) + `registry.backups/` + `.streamlit/` |
+| 3 | 确认程序入口与启动方式 | `start_dashboard.bat`、`pmhub_app.bat`（探活+自愈+Edge 独立窗口）、`stop_dashboard.bat`；命令行为 `streamlit run dashboard.py --server.address=127.0.0.1 --browser.gatherUsageStats false` |
+| 4 | 确认正式台账位置 | `<根目录>/registry.json`，**773,072 字节**（21:51 登记 progress_log 后） |
+| 5 | 确认扫描范围与路径配置 | `SCAN_ROOTS` 11 处、深度 1–2；排除 `C:\`、游戏/影音目录、`H:\Program Files` 等；微信目录不在范围内 |
+| 6 | 检查 Git 状态 | 分支 `master`，HEAD `10d279b`，remote `456kimi/pm-hub` |
+| 7 | 检查未保存/未提交修改 | `git status --porcelain` **为空**（工作区干净）；台账与 WORKLOG 的本地变化属忽略项，不入库 |
+| 8 | 检查现有测试 | 8 个测试文件，覆盖台账并发、扫描并发、看板表单、交接包、导出脱敏、进度口径 |
+| 9 | 运行非破坏性基线测试 | **Ran 77 tests / OK / 5.700s**（使用看板同一套解释器；未写正式台账） |
+| 10 | 记录真实运行结果 | 本节 + 全文；看板进程实测见 2.3 |
+
+> 看板运行态：审计时 **8501 无监听、无 streamlit 进程**。日志显示最后一次启动为 20:43:06（PID 36096），此后无 traceback，判定为被正常关闭；按 AGENTS.md"AI 不得代为启动应用"，本次未拉起。启动入口本身经 20:48 实测可用（health=ok）。
+
 ### 2.1 项目根目录与事实来源
 
 - 本地根目录：`H:\github\pm-hub`（`dashboard.py` 用 `HUB = Path(__file__).resolve().parent` 推导，换目录可运行）
-- 正式台账：`<根目录>/registry.json`，**772,447 字节**
-- 台账规模实测：项目 36（其中 `kind=program` 4）、应用 722、位置 12、任务 80、决策 70（active 69 + revoked 1）、进展流水 179 条
+- 正式台账：`<根目录>/registry.json`，**773,072 字节**
+- 台账规模实测：项目 36（其中 `kind=program` 4）、应用 722、位置 12、任务 80、决策 70（active 69 + revoked 1）、进展流水 180 条
 
 ### 2.2 Git 版本差异（重要）
 
@@ -72,9 +89,11 @@
 
 > `SCAN_ROOTS` / `APP_PORTABLE_DIRS` 中的盘符是本机盘点配置（业务输入），不属于"换目录无法运行"的硬编码缺陷；本次只修了运行时路径常量。
 
-### 2.6 审计前的未提交改动
+### 2.6 未提交修改
 
-`git status` 显示 6 项改动（上轮 P0-A/P1-A 之后的看板稳定性修复与本次 P0 修复），本次审计前**未发现被意外覆盖的本地文件**。
+审计启动时 `git status` 有 6 项改动（上轮 P0-A/P1-A 之后的看板稳定性修复 + 本次 P0 修复），**审计过程中未发现被意外覆盖的本地文件**。这些改动已随 `10d279b` 提交，当前 `git status --porcelain` 为空。
+
+台账与 `WORKLOG.md` 的本地变化属 `.gitignore` 忽略项，不进入公开仓库。
 
 ---
 
@@ -153,7 +172,7 @@
 
 **验证证据**
 
-- `python -m unittest discover -s tests` → `Ran 77 tests / OK / 5.585s`
+- `python -m unittest discover -s tests` → `Ran 77 tests / OK / 5.700s`（复跑一次 5.585s，均在 5.6–5.7s 区间）
 - 真实台账 AppTest 渲染：项目总览 / 项目详情两页 `exception=False`
 - 台账业务数据未改：仅保留原有 mtime 20:48（本次未走写台账流程）
 
