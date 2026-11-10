@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from streamlit.testing.v1 import AppTest
 import export_static
+import pm_handoff
 import pm_registry
 
 
@@ -36,7 +37,13 @@ class DashboardConcurrencyTests(unittest.TestCase):
         exporter_root = patch.object(export_static, "HUB", self.root)
         exporter_root.start()
         self.addCleanup(exporter_root.stop)
-        for name in ("dashboard.py", "theme.py", "pm_progress.py", "pm_registry.py", "export_static.py"):
+        # Same hazard for the handoff module: its default root is the real repo's
+        # .pmhub/handoffs, so redirect it into the fixture before any button click.
+        handoff_root = patch.object(pm_handoff, "ROOT", self.root)
+        handoff_root.start()
+        self.addCleanup(handoff_root.stop)
+        for name in ("dashboard.py", "theme.py", "pm_progress.py", "pm_registry.py",
+                     "pm_handoff.py", "export_static.py"):
             shutil.copy2(ROOT / name, self.root / name)
         self.registry = self.root / "registry.json"
         data = {
@@ -124,6 +131,25 @@ class DashboardConcurrencyTests(unittest.TestCase):
         self.assertTrue(self.app.error)
         self.assertEqual(self.text("标题").value, "Project task draft")
         self.assertEqual(pm_registry.read_registry(self.registry)["projects"], [])
+
+
+    def test_generate_handoff_pack_writes_into_fixture(self):
+        """看板的「生成交接包」必须只写临时目录，且生成完整包结构。"""
+        real = ROOT / ".pmhub" / "handoffs"
+        before = sorted(p.name for p in real.iterdir()) if real.is_dir() else []
+        self.click("生成交接包")
+        self.assertFalse(self.app.exception)
+        packs = sorted((self.root / ".pmhub" / "handoffs").glob("H-*"))
+        self.assertEqual(len(packs), 1, "应生成且只生成一个交接包")
+        for name in ("TASK.md", "CONTEXT.md", "MANIFEST.json", "HANDOFF.md"):
+            self.assertTrue((packs[0] / name).exists(), name)
+        after = sorted(p.name for p in real.iterdir()) if real.is_dir() else []
+        self.assertEqual(before, after, "不得写入正式 .pmhub/handoffs")
+
+        manifest = json.loads((packs[0] / "MANIFEST.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["project_id"], "demo")
+        self.assertEqual(manifest["task_id"], "t1")
+        self.assertFalse(manifest["program_id"])   # 独立小项目没有 L1 父级
 
 
 if __name__ == "__main__":

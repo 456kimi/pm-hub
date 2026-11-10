@@ -14,7 +14,36 @@ import streamlit as st
 
 HUB = Path(__file__).resolve().parent
 sys.path.insert(0, str(HUB))
-from pm_progress import progress_info
+
+
+def _reload_stale_local_modules():
+    """按文件 mtime 重载本地模块，避免改了 pm_*.py 就白屏。
+
+    Streamlit 每次 rerun **只重跑主脚本**，被 import 的本地模块会一直沿用进程启动
+    时加载的旧版本。所以改完 `pm_progress.py` 之类再刷新页面，就会
+    `ImportError: cannot import name ...`（2026-11-10 实际踩过，页面整块报错）。
+    在这里先按 mtime 重载，改完代码刷新页面即生效，不必重启进程。
+
+    重载失败（语法错误 / 半写状态）时保留旧版本：宁可显示旧页面，也不要整页崩。
+    """
+    import importlib
+    for name in ("pm_progress", "pm_registry", "pm_handoff", "theme", "export_static"):
+        mod = sys.modules.get(name)
+        if mod is None or not getattr(mod, "__file__", None):
+            continue
+        try:
+            mtime = Path(mod.__file__).stat().st_mtime_ns
+            if mtime > getattr(mod, "_pm_loaded_mtime", 0):
+                importlib.reload(mod)
+                mod._pm_loaded_mtime = mtime
+        except Exception:
+            pass
+
+
+_reload_stale_local_modules()
+
+from pm_progress import progress_info, program_rollup
+from pm_handoff import render_task_brief, export_pack, import_result, list_packs, validate_pack
 from pm_registry import read_registry, save_registry, export_registry, RegistryConflict, RegistryLockTimeout
 REG = HUB / "registry.json"
 UNREG = HUB / "reports" / "unregistered.json"
@@ -367,89 +396,22 @@ def task_stats(p):
 
 
 def rollup(plist, prog):
-    """L1 聚合：子项目数、任务统计、进度（任务优先，无任务时取子项目均值）。"""
-    kids = child_projects(plist, prog.get("id"))
-    tot = done = doing = 0
-    for k in kids:
-        for t in (k.get("tasks") or []):
-            if not isinstance(t, dict):
-                continue
-            tot += 1
-            if t.get("status") == "done":
-                done += 1
-            elif t.get("status") == "doing":
-                doing += 1
-    if tot:
-        pct = round(done * 100 / tot)
-    else:
-        vals = [v for k in kids for v in [progress_info(k)[0]] if isinstance(v, (int, float))]
-        pct = round(sum(vals) / len(vals)) if vals else None
-    covered = sum(bool(k.get("tasks")) for k in kids)
-    source = (f"按子项目任务 {done}/{tot} 计算 · {covered}/{len(kids)} 个小项目有任务" if tot
-              else f"按 {len(vals)}/{len(kids)} 个有进度的小项目取均值" if vals
-              else "暂无可计算的子项目进度")
-    return {"kids": kids, "n_kids": len(kids), "n_tasks": tot,
-            "done": done, "doing": doing, "progress": pct, "progress_source": source}
+    """L1 聚合：子项目数、任务统计、进度（任务优先，无任务时取子项目均值）。
+
+    实现在 pm_progress.program_rollup —— 看板、静态页、状态导出共用同一口径。
+    """
+    return program_rollup(plist, prog)
 
 
 def task_pack_text(prog, proj, task):
-    """把一条任务渲染成"可交付 AI 的完整任务包"。上下文越全，AI 产出越不糊。"""
-    root = (proj.get("paths") or {}).get("root") or "（待补）"
-    deps = "、".join(proj.get("data_deps") or []) or "无"
-    L = []
-    L.append("【任务包】%s / %s" % (proj.get("name", ""), task.get("title", "")))
-    L.append("")
-    L.append("一、背景（先读，别跳）")
-    if prog:
-        L.append("- 所属超大项目：%s —— %s" % (prog.get("name", ""), prog.get("description", "")))
-        if prog.get("notes"):
-            L.append("- 超大项目约束：%s" % prog["notes"])
-        if prog.get("integration"):
-            L.append("- 该超大项目的整合说明（本小项目在其中的位置）：%s" % prog["integration"])
-        _rels = prog.get("relations") or []
-        if _rels:
-            _nm = {k.get("id"): k.get("name", "") for k in projects}
-            L.append("- 小项目之间的连接关系：")
-            for _r in _rels:
-                L.append("    · %s ──%s──▶ %s%s" % (
-                    _nm.get(_r.get("from"), _r.get("from", "?")), _r.get("type", ""),
-                    _nm.get(_r.get("to"), _r.get("to", "?")),
-                    ("（%s）" % _r["note"]) if _r.get("note") else ""))
-    L.append("- 小项目：%s —— %s" % (proj.get("name", ""), proj.get("description", "")))
-    L.append("- 项目阶段：%s" % (proj.get("stage") or "—"))
-    L.append("- 项目根目录：%s" % root)
-    L.append("- 数据依赖：%s" % deps)
-    if proj.get("notes"):
-        L.append("- 项目备注：%s" % proj["notes"])
-    decs = [d for d in (proj.get("decisions") or []) if d.get("status", "active") == "active"]
-    if decs:
-        L.append("")
-        L.append("- 本项目**现行结论（必须遵守，不得违反）**：")
-        for d in decs:
-            L.append("    · [%s] %s%s" % (d.get("date", ""), d.get("text", ""),
-                                         ("（依据：%s）" % d["note"]) if d.get("note") else ""))
-    else:
-        L.append("")
-        L.append("- 本项目暂无现行结论；若你的工作产生了新的口径，请在收尾时用「结论与裁决」写入台账。")
-    L.append("")
-    L.append("二、本任务（编号 %s%s）" % (task.get("id", ""),
-                                     ("，批次 " + task["batch"]) if task.get("batch") else ""))
-    L.append("- 目标：%s" % task.get("title", ""))
-    if task.get("detail"):
-        L.append("- 说明：%s" % task["detail"])
-    L.append("- 输入（动手前必须读）：%s" % (task.get("inputs") or "见项目根目录与 WORKLOG.md")) 
-    L.append("- 交付物：%s" % (task.get("outputs") or "（未指定，请先给出方案再执行）"))
-    L.append("- 验收标准：%s" % (task.get("acceptance") or "（未指定，请先向我确认验收口径）"))
-    L.append("")
-    L.append("三、执行要求")
-    L.append("1. 先读上述输入与项目 WORKLOG.md，用三句话复述你的理解，再动手。")
-    L.append("2. 产物写明确路径，H:/G 盘可以，禁止写 C 盘；完成后贴实际命令输出或文件清单作为证据。")
-    L.append("3. 不编造未验证的数据与结论；不确定的标注「待确认」并给出验证方法。")
-    L.append("4. 严格限定在本任务范围内；发现范围外的问题只记录到「发现但未处理」，不要顺手改。")
-    L.append("5. 结束后按 PM-Hub 的 AGENTS.md 写入协议，通过统一入口登记 ai_logs / progress_log 并更新任务状态；不要直接覆盖 registry.json。")
-    L.append("6. 若本次工作产生了**新的口径 / 否决了旧做法**，写进台账的 `decisions[]`（现行结论），"
-             "不要只写在自己的长期记忆里——那不可撤销。")
-    return "\n".join(L)
+    """把一条任务渲染成"可交付 AI 的完整任务包"。
+
+    实现在 `pm_handoff.render_task_brief` —— 与交接包 TASK.md 共用同一份渲染逻辑，
+    避免"看板上看到的"和"交接包里的"两套措辞慢慢漂移。
+    """
+    return render_task_brief(
+        prog, proj, task,
+        name_map={p["id"]: p.get("name", "") for p in projects if p.get("id")})
 
 
 def task_pack_markdown(prog, proj, only_todo=True):
@@ -1798,6 +1760,61 @@ def render_task_block(prog, p):
                 st.download_button("下载本任务包 .md", data=txt,
                                    file_name=f"taskpack-{p['id']}-{t.get('id')}.md",
                                    key=f"dl-{p['id']}-{t.get('id')}")
+
+            with st.expander("交接包（落盘成目录，AI 读文件执行 / 结果自动回收）"):
+                _hk = f"ho-{p['id']}-{t.get('id')}"
+                st.caption("在 `.pmhub/handoffs/` 下生成 TASK.md + CONTEXT.md + MANIFEST.json。"
+                           "把目录路径交给 ZCode / WorkBuddy 即可，不需要任何模型 API；"
+                           "AI 执行完把 RESULT.md / EVIDENCE.json 写回同一目录。")
+                if st.button("生成交接包", key=_hk + "-gen", width="stretch",
+                             help="纯文件操作：不联网、不调用模型、不改台账"):
+                    try:
+                        info = export_pack(
+                            p, t, prog,
+                            name_map={x["id"]: x.get("name", "") for x in projects if x.get("id")},
+                            operator="owner(工作台)")
+                        st.session_state[_hk + "-info"] = info
+                    except Exception as exc:
+                        st.error("生成失败：%s" % exc)
+                _info = st.session_state.get(_hk + "-info")
+                if _info:
+                    st.success("已生成：`%s`" % _info["pack_dir"])
+                    _card = Path(_info["pack_dir"]) / "HANDOFF.md"
+                    if _card.exists():
+                        st.code(_card.read_text(encoding="utf-8"), language=None)
+                    st.caption("把上面那段贴进对话框；AI 会把结果写回该目录，回来这里点「导入结果」。")
+
+                _suffix = "-%s-%s" % (p["id"], t.get("id"))
+                _mine = [x for x in list_packs() if x["handoff_id"].endswith(_suffix)]
+                if _mine:
+                    _pick = st.selectbox("选择要校验的交接包", [x["handoff_id"] for x in _mine],
+                                         key=_hk + "-pick",
+                                         format_func=lambda h: "%s（%s）" % (
+                                             h, "已写回" if any(
+                                                 y["handoff_id"] == h and y["has_result"] for y in _mine)
+                                             else "待执行"))
+                    _target = next(x for x in _mine if x["handoff_id"] == _pick)
+                    c1, c2 = st.columns(2)
+                    if c1.button("导入结果并校验", key=_hk + "-imp", width="stretch",
+                                 disabled=not _target["has_result"]):
+                        rep = import_result(_target["pack_dir"])
+                        st.session_state[_hk + "-rep"] = rep
+                    if c2.button("只校验", key=_hk + "-val", width="stretch",
+                                 disabled=not _target["has_result"]):
+                        st.session_state[_hk + "-rep"] = validate_pack(_target["pack_dir"])
+                    _rep = st.session_state.get(_hk + "-rep")
+                    if _rep:
+                        if _rep["ok"]:
+                            st.success("校验通过（无阻断项），可以人工验收。")
+                        else:
+                            st.error("校验未通过：%d 个阻断项" % len(_rep["issues"]))
+                        for _x in _rep["issues"]:
+                            st.markdown("- **阻断**：%s" % _x)
+                        for _x in _rep["warnings"]:
+                            st.markdown("- 注意：%s" % _x)
+                        st.caption("校验只比对格式、ID 与文件范围，**不执行** AI 写下的任何命令；"
+                                   "通过也不等于任务完成，验收仍由你判断。")
+
             with st.expander("编辑 / 删除这条任务"):
                 _form_key = f"task-{p['id']}-{t.get('id')}"
                 _original = form_base(_form_key, t)

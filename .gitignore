@@ -4,6 +4,9 @@ unresolved.json
 web_cache.json
 ui_prefs.json
 
+# ============ 任务交接包：含项目上下文、执行证据与授权范围，本地专用 ============
+.pmhub/
+
 # ============ 台账导出的静态页面（含全部项目数据）============
 index.html
 preview/

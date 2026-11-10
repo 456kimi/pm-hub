@@ -9,6 +9,7 @@
   - `projects[]` 项目（**三级体系**：L1 超大项目 → L2 小项目 → L3 任务）| `apps[]` 应用 | `locations[]` 文件地标
 - **盘点报告**: `H:\github\pm-hub\reports\`（scanner 只读扫描产物）
 - **看板**: `streamlit run H:\github\pm-hub\dashboard.py` → 浏览器 localhost:8501
+  （日常用 `pmhub_app.bat`：健康自检 + 自愈重启 + 独立应用窗口；页面报错先看 `_dash_run.log`）
 - **静态版**: `H:\github\pm-hub\index.html`（每次台账变更自动导出，双击即看）
 
 ## 读写协议
@@ -30,6 +31,49 @@
 7. **拆任务（推荐给 AI 下指令前先做）**：把一件事拆成 3–8 条可独立交付的任务写进 `tasks[]`，
    每条必须带 `acceptance`（可判定的验收标准）与 `inputs`（要读的文件）；`batch` 相同的任务表示同一批交付。
    看板上导出任务包后，把那一整段贴给 AI —— **不要用一句话指挥 AI**，上下文不全必然产出粗略。
+
+## 任务交接包（handoff）—— 外部 AI 的标准入口（2026-11-10 新增）
+
+> 背景：没有独立的模型 API 权益，AI 只能在 ZCode / WorkBuddy 这类软件的对话框里跑。
+> 所以交接不靠 API，靠**本地目录**：PM-Hub 写任务包，AI 读文件执行，把结果写回同一目录。
+
+### 交接包在哪
+
+`H:\github\pm-hub\.pmhub\handoffs\<handoff_id>\`（已 gitignore，本地专用）
+
+| 文件 | 谁写 | 作用 |
+|------|------|------|
+| `TASK.md` | PM-Hub | 任务正文 + 授权范围 + 禁止事项 + 验收标准 |
+| `CONTEXT.md` | PM-Hub | 项目目标、L1/L2 现行决策、数据范围、非目标 |
+| `MANIFEST.json` | PM-Hub | **机器可读的授权基准**，校验以它为准 |
+| `HANDOFF.md` | PM-Hub | 可直接贴进对话框的接手指令 |
+| `RESULT.md` | **执行方** | 做了什么、为什么、改了哪些文件、剩余问题 |
+| `EVIDENCE.json` | **执行方** | 文件清单、测试命令与结果、需审批事项 |
+| `VALIDATION.json` | PM-Hub | 导入时的校验结论 |
+
+生成方式：看板任务详情页「交接包」区点「生成交接包」，或命令行
+`python pm_handoff.py export --project <小项目 id> --task <任务 id>`。
+
+### 执行方（AI）的义务
+
+1. **先读三件套**：`TASK.md` → `CONTEXT.md` → `MANIFEST.json`，读不到就明说缺哪个，不许猜。
+2. 只在 `MANIFEST.allowed_roots` 内操作；范围为空说明台账没登记根目录，先问，别自行扩大。
+3. 完成后**必须写回** `RESULT.md` 与 `EVIDENCE.json`；`task_id` 必须与 MANIFEST 一致。
+4. 测试只报真实结果：没跑写「未运行」并说明原因。`outcome: "passed"` 还会被要求给 notes。
+5. 不要自己宣布任务完成 —— 验收由 PM-Hub 校验 + 老板确认，执行方自判无效。
+
+### 校验做什么、不做什么
+
+- 做：JSON 格式、`handoff_id` / `task_id` 是否匹配、`files_changed` 是否越界、
+  是否声称改过 `registry.json`、`status` 是否合法、有无需审批事项。
+- **不做**：不执行 EVIDENCE 里写的任何命令（AI 写的命令不能当脚本跑），
+  不自动接受任务，不改台账，不 push。
+
+### 硬边界（违反即返工）
+
+- 交接包只是**任务开始时的只读快照**；正式目标与正式决定永远以 `registry.json` 为准。
+- 执行方把建议写成正式 decision = 越权。要改口径，走「结论与裁决」，由老板点。
+- 不要为了「一次做完」扩大范围；范围外的问题写进 `RESULT.md` 的「发现但未处理」。
 
 ## 结论与裁决（decisions）—— 推翻旧结论的唯一正道（2026-10-08 新增）
 
